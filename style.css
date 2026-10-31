@@ -1,6 +1,6 @@
 .bs-container {
-    max-width: 1200px;
-    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
     padding: 1.25rem 1.5rem;
     color: var(--app-text-primary);
 }
@@ -101,16 +101,17 @@
 .bs-status {
     color: var(--app-text-muted);
     font-size: 0.88rem;
-    min-height: 1.2em;
     margin-bottom: 0.6rem;
 }
+
+.bs-status:empty { display: none; }
 
 .bs-status.bs-error { color: #ef4444; }
 
 /* ===== 카드 ===== */
 .bs-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 1rem;
 }
 
