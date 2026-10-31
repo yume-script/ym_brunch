@@ -1,0 +1,40 @@
+<div class="bs-container" id="bs-root">
+  <div class="bs-header">
+    <div>
+      <h2 class="bs-title"><i class="fa-solid fa-mug-hot"></i> 브런치 요일별 연재</h2>
+      <p class="bs-desc">브런치북 오리지널 연재를 요일별로 모아 봅니다. 카드를 누르면 브런치에서 해당 회차가 새 탭으로 열립니다.</p>
+    </div>
+    <button type="button" class="bs-btn" id="bs-refresh" title="다시 불러오기">
+      <i class="fa-solid fa-rotate-right"></i> 새로고침
+    </button>
+  </div>
+
+  <div class="bs-tabs" role="tablist" id="bs-days">
+    <button type="button" class="bs-tab" data-day="MONDAY" role="tab">월</button>
+    <button type="button" class="bs-tab" data-day="TUESDAY" role="tab">화</button>
+    <button type="button" class="bs-tab" data-day="WEDNESDAY" role="tab">수</button>
+    <button type="button" class="bs-tab" data-day="THURSDAY" role="tab">목</button>
+    <button type="button" class="bs-tab" data-day="FRIDAY" role="tab">금</button>
+    <button type="button" class="bs-tab" data-day="SATURDAY" role="tab">토</button>
+    <button type="button" class="bs-tab" data-day="SUNDAY" role="tab">일</button>
+    <button type="button" class="bs-tab" data-day="COMPLETE" role="tab">완결</button>
+  </div>
+
+  <div class="bs-sorts" id="bs-sorts">
+    <button type="button" class="bs-sort" data-sort="PUBLISH_TIME">최신순</button>
+    <button type="button" class="bs-sort" data-sort="DONATION_TOTAL_AMOUNT">응원순</button>
+    <button type="button" class="bs-sort" data-sort="LIKE_COUNT">라이킷순</button>
+  </div>
+
+  <div class="bs-status" id="bs-status" role="status"></div>
+  <div class="bs-grid" id="bs-grid"></div>
+
+  <div class="bs-more-wrap">
+    <button type="button" class="bs-btn" id="bs-more" style="display: none;">더 보기</button>
+  </div>
+
+  <p class="bs-footnote">
+    <i class="fa-solid fa-circle-info"></i>
+    목록은 brunch.co.kr 공개 API에서 가져오며 서버에서 5분 동안 보관합니다. 글의 저작권은 각 작가에게 있습니다.
+  </p>
+</div>

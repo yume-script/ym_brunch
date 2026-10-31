@@ -1,0 +1,248 @@
+.bs-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.25rem 1.5rem;
+    color: var(--app-text-primary);
+}
+
+.bs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.1rem;
+}
+
+.bs-title {
+    margin: 0 0 0.35rem 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--app-text-primary);
+}
+
+.bs-title i { color: var(--app-accent); }
+
+.bs-desc {
+    margin: 0;
+    color: var(--app-text-muted);
+    font-size: 0.88rem;
+    line-height: 1.6;
+}
+
+.bs-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--app-bg-card);
+    color: var(--app-text-primary);
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    padding: 0.5rem 0.9rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.bs-btn:hover { background: var(--app-bg-card-hover); }
+
+/* ===== 요일 탭 ===== */
+.bs-tabs {
+    display: flex;
+    gap: 0.3rem;
+    border-bottom: 1px solid var(--app-border);
+    margin-bottom: 0.8rem;
+    overflow-x: auto;
+}
+
+.bs-tab {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--app-text-muted);
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 0.6rem 0.95rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.bs-tab:hover { color: var(--app-text-primary); }
+
+.bs-tab.active {
+    color: var(--app-accent);
+    border-bottom-color: var(--app-accent);
+}
+
+/* ===== 정렬 ===== */
+.bs-sorts {
+    display: flex;
+    gap: 0.4rem;
+    margin-bottom: 1rem;
+}
+
+.bs-sort {
+    background: transparent;
+    border: 1px solid var(--app-border);
+    color: var(--app-text-muted);
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.bs-sort.active {
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+    color: var(--app-accent-contrast, #fff);
+}
+
+.bs-status {
+    color: var(--app-text-muted);
+    font-size: 0.88rem;
+    min-height: 1.2em;
+    margin-bottom: 0.6rem;
+}
+
+.bs-status.bs-error { color: #ef4444; }
+
+/* ===== 카드 ===== */
+.bs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+}
+
+.bs-card {
+    display: flex;
+    flex-direction: column;
+    background: var(--app-bg-card);
+    border: 1px solid var(--app-border-light, var(--app-border));
+    border-radius: 12px;
+    overflow: hidden;
+    text-decoration: none;
+    color: inherit;
+    transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.bs-card:hover {
+    background: var(--app-bg-card-hover);
+    transform: translateY(-2px);
+}
+
+.bs-cover {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    background: var(--app-input-bg, var(--app-bg-main));
+}
+
+.bs-cover img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.bs-cover-empty {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    color: var(--app-text-muted);
+}
+
+.bs-badge {
+    position: absolute;
+    top: 0.5rem;
+    left: 0.5rem;
+    background: rgba(0, 0, 0, 0.65);
+    color: #fff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    border-radius: 4px;
+    padding: 0.15rem 0.4rem;
+}
+
+.bs-badge.bs-new { background: #00c3bd; }
+.bs-badge + .bs-badge { left: 3.3rem; }
+
+.bs-body {
+    padding: 0.75rem 0.85rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    flex: 1;
+}
+
+.bs-book {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--app-accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bs-ep {
+    font-size: 0.95rem;
+    font-weight: 800;
+    line-height: 1.35;
+    color: var(--app-text-primary);
+}
+
+.bs-sub {
+    font-weight: 500;
+    font-size: 0.8rem;
+    color: var(--app-text-secondary, var(--app-text-muted));
+}
+
+.bs-summary {
+    margin: 0;
+    font-size: 0.8rem;
+    line-height: 1.55;
+    color: var(--app-text-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.bs-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--app-text-muted);
+    margin-top: auto;
+}
+
+.bs-counts { margin-top: 0; justify-content: flex-start; gap: 0.9rem; }
+
+.bs-author {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bs-more-wrap {
+    display: flex;
+    justify-content: center;
+    margin: 1.2rem 0 0.4rem;
+}
+
+.bs-footnote {
+    margin-top: 1rem;
+    font-size: 0.78rem;
+    color: var(--app-text-muted);
+}
+
+@media (max-width: 600px) {
+    .bs-container { padding: 1rem; }
+    .bs-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.7rem; }
+}
