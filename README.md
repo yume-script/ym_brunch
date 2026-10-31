@@ -5,7 +5,8 @@
 - 좌측 사이드바에 **"브런치 연재"** 탭이 생깁니다.
 - 월~일 요일 탭 + **완결** 탭, 정렬 **최신순 / 응원순 / 라이킷순** (브런치 홈과 같음)
 - 카드: 표지, 브런치북 제목, 최신 회차 제목, 요약, 작가, 발행 시각, 라이킷·응원 금액
-- 카드를 누르면 브런치에서 해당 회차가 새 탭으로 열립니다. 20개씩 **더 보기**.
+- 카드를 누르면 **북오아시스 안에서 바로 읽습니다** (본문·사진·인용·구분선, 같은 브런치북의 앞뒤 회차 이동).
+  Ctrl/가운데 클릭은 브런치 원문을 새 탭으로 엽니다. 목록은 20개씩 **더 보기**.
 - 처음 열면 오늘 요일 탭이 선택됩니다.
 
 ## 설치
@@ -31,7 +32,16 @@ script.js ──POST /api/media/context-menu/book/plugins/action──▶ run_co
 ym_brunch.py ──GET──▶ https://api.brunch.co.kr/v2/serial-brunchbook/all
           ?dayOfWeek=MONDAY&orderKeyword=PUBLISH_TIME&serialStatus=ONGOING
           (완결: ?serialStatus=COMPLETE)
+
+script.js ──POST (같은 경로)──▶ run_context_menu_action('article')  context:{user_id, article_no}
+ym_brunch.py ──GET──▶ https://brunch.co.kr/@@{user_id}/{article_no}
+          ARTICLE_DATA JSON(제목/작가) + #ArticleView 본문 + list_magazine(앞뒤 회차)
 ```
+
+- 브런치 글 페이지는 `X-Frame-Options: DENY`라 iframe으로 띄울 수 없어서, 서버가 페이지를 받아
+  본문만 뽑습니다. 본문은 허용한 태그(p, b, img, blockquote, hr, a …)와 href/src만 남기고
+  스크립트·스타일·이벤트 속성은 모두 버립니다(`_Sanitizer`). 글은 10분 보관합니다.
+- 멤버십(유료) 글은 브런치 페이지에 앞부분만 있어서, 앞부분과 함께 원문 링크를 안내합니다.
 
 - `orderKeyword`: `PUBLISH_TIME`(최신순) / `DONATION_TOTAL_AMOUNT`(응원순) / `LIKE_COUNT`(라이킷순)
 - 응답의 `nextUrl`로 다음 20개를 받습니다. 서버는 `api.brunch.co.kr` 주소만 따라갑니다.
