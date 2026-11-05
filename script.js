@@ -301,11 +301,22 @@
         return ko.length ? ko : all;
     }
 
+    // 목소리 이름은 브라우저마다 제각각이다: 크롬 "Google 한국의", 엣지 "Microsoft SunHi Online (Natural) - Korean (Korea)",
+    // 윈도우 "Microsoft Heami - Korean (Korean)", 애플 "Yuna". 회사 이름은 남기고 뒤의 언어 꼬리만 뗀다.
+    function voiceLabel(v) {
+        var n = String(v.name || '').trim();
+        if (/^Google 한국의$/.test(n)) n = 'Google 한국어';
+        n = n.replace(/\s*[-–]\s*(Korean|한국어).*$/i, '').replace(/\s+Online \(Natural\)/i, ' (자연스러운 음성)');
+        if (!/^ko/i.test(v.lang || '')) n += ' (' + v.lang + ')';
+        if (v.localService === false) n += ' · 온라인';
+        return n || v.lang || '기본 음성';
+    }
+
     function fillVoices() {
         var sel = $('#bs-tts-voice');
         var voices = koVoices();
         sel.innerHTML = voices.map(function (v) {
-            return '<option value="' + esc(v.name) + '">' + esc(v.name.replace(/^Microsoft |^Google /, '')) + '</option>';
+            return '<option value="' + esc(v.name) + '" title="' + esc(v.name) + '">' + esc(voiceLabel(v)) + '</option>';
         }).join('');
         sel.style.display = voices.length > 1 ? '' : 'none';
         if (tts.ttsCfg.voice && voices.some(function (v) { return v.name === tts.ttsCfg.voice; })) sel.value = tts.ttsCfg.voice;
