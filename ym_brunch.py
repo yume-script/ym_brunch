@@ -17,10 +17,17 @@
   - <div id="ArticleView"> 안 서버 렌더링 HTML -> 허용한 태그만 남겨(_Sanitizer) 본문
   - <ul class="list_magazine"> -> 같은 브런치북의 앞뒤 회차 목록
 을 뽑아 화면에 넘긴다.
+
+서버 음성(action 'tts_voices' / 'tts'): 브라우저 내장 음성은 기기마다 1~2개뿐이라, edge-tts 패키지로
+마이크로소프트 Edge의 무료 신경망 음성(한국어 3개 + 한국어도 읽는 다국어 11개)을 만들어 mp3로 넘긴다.
+키·요금 없음. 비공식 경로라 막히면 화면은 브라우저 음성으로 쓰면 된다. edge-tts가 없으면 목록에 안 나온다.
 화면(script.js) -> /api/media/context-menu/book/plugins/action -> run_context_menu_action()
 반환은 {'success': bool, 'message'|'error': str} dict여야 하고(튜플이면 코어가 400),
 목록은 message에 JSON 문자열로 담아 보냅니다.
 """
+import asyncio
+import base64
+import collections
 import json
 import re
 import threading
@@ -300,6 +307,99 @@ def fetch_article(user_id, article_no):
     return result
 
 
+# ── 서버 음성 (Edge) ──
+try:
+    import edge_tts
+except Exception:  # noqa: BLE001 - 없거나 깨져 있어도 플러그인 전체가 안 뜨면 안 된다. 브라우저 음성만 쓴다
+    edge_tts = None
+
+# (ShortName, 화면 이름) - edge-tts --list-voices 에서 한국어와, 한국어도 읽는 Multilingual만 추렸다
+EDGE_VOICES = [
+    ("ko-KR-SunHiNeural", "선히 (여성)"),
+    ("ko-KR-InJoonNeural", "인준 (남성)"),
+    ("ko-KR-HyunsuMultilingualNeural", "현수 (남성)"),
+    ("en-US-AvaMultilingualNeural", "Ava (여성, 다국어)"),
+    ("en-US-EmmaMultilingualNeural", "Emma (여성, 다국어)"),
+    ("en-US-AndrewMultilingualNeural", "Andrew (남성, 다국어)"),
+    ("en-US-BrianMultilingualNeural", "Brian (남성, 다국어)"),
+    ("en-AU-WilliamMultilingualNeural", "William (남성, 다국어)"),
+    ("de-DE-SeraphinaMultilingualNeural", "Seraphina (여성, 다국어)"),
+    ("de-DE-FlorianMultilingualNeural", "Florian (남성, 다국어)"),
+    ("fr-FR-VivienneMultilingualNeural", "Vivienne (여성, 다국어)"),
+    ("fr-FR-RemyMultilingualNeural", "Remy (남성, 다국어)"),
+    ("it-IT-GiuseppeMultilingualNeural", "Giuseppe (남성, 다국어)"),
+    ("pt-BR-ThalitaMultilingualNeural", "Thalita (여성, 다국어)"),
+]
+_EDGE_IDS = set(v[0] for v in EDGE_VOICES)
+TTS_MAX_CHARS = 600
+TTS_TIMEOUT_SEC = 30
+TTS_CACHE_BYTES = 30 * 1024 * 1024  # 같은 문장을 다시 들을 때(되감기·이어 듣기) 다시 받지 않게
+
+_audio_cache = collections.OrderedDict()
+_audio_cache_size = [0]
+_audio_lock = threading.Lock()
+
+
+def tts_voices():
+    if edge_tts is None:
+        return {"available": False, "voices": [],
+                "reason": "서버에 edge-tts가 없습니다: docker exec bookoasis pip install edge-tts 후 재시작 (README 설치 2단계)"}
+    return {"available": True, "voices": [{"id": i, "name": n} for i, n in EDGE_VOICES]}
+
+
+def _edge_synth(voice, text):
+    async def run():
+        buf = bytearray()
+        async for part in edge_tts.Communicate(text, voice, receive_timeout=TTS_TIMEOUT_SEC).stream():
+            if part.get("type") == "audio":
+                buf.extend(part["data"])
+        return bytes(buf)
+
+    # 코어가 이벤트 루프 안에서 부르더라도 충돌하지 않게 별도 스레드에서 새 루프로 돌린다
+    box = {}
+
+    def worker():
+        try:
+            box["data"] = asyncio.run(run())
+        except Exception as e:  # noqa: BLE001
+            box["error"] = e
+
+    t = threading.Thread(target=worker, daemon=True)
+    t.start()
+    t.join(TTS_TIMEOUT_SEC + 5)
+    if t.is_alive():
+        raise RuntimeError("음성 서버 응답이 너무 늦습니다.")
+    if "error" in box:
+        raise box["error"]
+    if not box.get("data"):
+        raise RuntimeError("음성을 받지 못했습니다.")
+    return box["data"]
+
+
+def tts_audio(voice, text):
+    if edge_tts is None:
+        raise RuntimeError(tts_voices()["reason"])
+    if voice not in _EDGE_IDS:
+        raise ValueError("알 수 없는 목소리입니다.")
+    text = re.sub(r"\s+", " ", str(text or "")).strip()[:TTS_MAX_CHARS]
+    if not text:
+        raise ValueError("읽을 글이 없습니다.")
+    key = voice + "\n" + text
+    with _audio_lock:
+        hit = _audio_cache.get(key)
+        if hit is not None:
+            _audio_cache.move_to_end(key)
+            return hit
+    data = _edge_synth(voice, text)
+    with _audio_lock:
+        _audio_cache[key] = data
+        _audio_cache_size[0] += len(data)
+        while _audio_cache_size[0] > TTS_CACHE_BYTES and _audio_cache:
+            _, old = _audio_cache.popitem(last=False)
+            _audio_cache_size[0] -= len(old)
+    return data
+
+
 class BrunchSerialProvider(BaseMetadataProvider):
     id = "ym_brunch"
     name = "브런치 요일별 연재"
@@ -319,7 +419,8 @@ class BrunchSerialProvider(BaseMetadataProvider):
         "enabled": True,
         "provider": "github-raw",
         "raw_base_url": "https://raw.githubusercontent.com/yume-script/ym_brunch/main",
-        "files": ["ym_brunch.py", "__init__.py", "VERSION", "index.html", "style.css", "script.js"],
+        "files": ["ym_brunch.py", "__init__.py", "VERSION", "index.html", "style.css", "script.js",
+                  "requirements.txt"],
         "version_file": "VERSION",
         "version_key": "plugin version",
     }
@@ -342,8 +443,14 @@ class BrunchSerialProvider(BaseMetadataProvider):
                                     context.get("next_url") or None)
             elif action_id == "article":
                 result = fetch_article(context.get("user_id"), context.get("article_no"))
+            elif action_id == "tts_voices":
+                result = tts_voices()
+            elif action_id == "tts":
+                audio = tts_audio(context.get("voice"), context.get("text"))
+                result = {"mime": "audio/mpeg", "audio": base64.b64encode(audio).decode("ascii")}
             else:
                 return {"success": False, "error": "알 수 없는 동작입니다: %s" % action_id}
         except Exception as e:  # noqa: BLE001 - 네트워크/브런치 오류는 화면에 그대로 보여준다
-            return {"success": False, "error": "브런치에서 가져오지 못했습니다: %s" % e}
+            what = "음성을 만들지 못했습니다" if action_id.startswith("tts") else "브런치에서 가져오지 못했습니다"
+            return {"success": False, "error": "%s: %s" % (what, e)}
         return {"success": True, "message": json.dumps(result, ensure_ascii=False)}

@@ -296,6 +296,7 @@
 }
 
 .bs-tts-pos { font-size: 0.8rem; color: var(--app-text-muted); margin-left: auto; }
+.bs-tts-pos.bs-error { color: #ef4444; }
 
 .bs-art-head.bs-tts-on,
 .bs-art-body > .bs-tts-on {
