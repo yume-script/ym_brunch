@@ -5,7 +5,7 @@
 // message에 JSON 문자열로 돌려준다. 바디는 type/plugin_id/action_id/context만 읽힌다.
 // 카드를 누르면 'article'로 본문을 받아 같은 탭 안의 읽기 화면에 띄운다(브런치는 iframe 금지).
 // 본문 HTML은 서버에서 허용 태그만 남긴 것이라 그대로 innerHTML로 넣는다.
-// 읽기 화면의 "듣기"는 브라우저 내장 음성 합성(speechSynthesis)으로 본문을 읽어 준다.
+// 읽기 화면의 "듣기"는 브라우저 음성(speechSynthesis) 또는 서버가 만든 Edge 음성(mp3)으로 본문을 읽어 준다.
 (function () {
     var ACTION_URL = '/api/media/context-menu/book/plugins/action';
     var DAY_KEYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
@@ -244,13 +244,23 @@
         }
     }
 
-    // ---- 소리 내어 읽기 (브라우저 내장 Web Speech API, 서버는 관여하지 않음) ----
-    // 크롬은 한 번에 긴 문장을 넘기면 15초쯤에서 끊기므로 문단을 문장 단위 조각(최대 ~180자)으로 나눠
-    // 하나씩 읽는다. 일시정지는 pause()가 안드로이드 크롬 등에서 불안정해서 cancel 후 그 조각부터 다시 읽는다.
+    // ---- 소리 내어 읽기 ----
+    // 목소리는 두 종류다.
+    //  - 브라우저 음성(b:이름): 기기에 깔린 speechSynthesis. 기기마다 1~2개뿐.
+    //  - 서버 음성(e:ID): 서버(ym_brunch.py 'tts')가 Edge 무료 음성으로 만든 mp3를 받아 <audio>로 재생.
+    //    한 문장에 1~2초 걸려서 지금 문장을 읽는 동안 다음 두 문장을 미리 받아 둔다.
+    // 문단을 문장 단위 조각(최대 ~180자)으로 나눠 하나씩 읽는다(크롬 speechSynthesis는 긴 문장을 15초쯤에서 끊음).
+    // 브라우저 음성의 일시정지는 pause()가 기기마다 불안정해서 cancel 후 그 조각부터 다시 읽는다.
     var TTS_KEY = 'ym_brunch_tts';
-    var synth = window.speechSynthesis;
-    var tts = { chunks: [], idx: 0, playing: false, gen: 0, utter: null, autoStart: false, cur: null, ttsCfg: {} };
+    var synth = window.speechSynthesis || null;
+    var hasSynth = !!(synth && typeof SpeechSynthesisUtterance !== 'undefined');
+    var tts = {
+        chunks: [], idx: 0, playing: false, gen: 0, utter: null, autoStart: false, cur: null, ttsCfg: {},
+        audio: null, fetches: {}, resumeIdx: -1, resumeTime: 0, serverVoices: [], serverNote: ''
+    };
     try { tts.ttsCfg = JSON.parse(localStorage.getItem(TTS_KEY) || '{}') || {}; } catch (e) { tts.ttsCfg = {}; }
+    // 0.3.x는 브라우저 음성 이름을 그대로 저장했다
+    if (tts.ttsCfg.voice && !/^[be]:/.test(tts.ttsCfg.voice)) tts.ttsCfg.voice = 'b:' + tts.ttsCfg.voice;
 
     function ttsSave() {
         try { localStorage.setItem(TTS_KEY, JSON.stringify(tts.ttsCfg)); } catch (e) { /* 저장 못 해도 동작엔 지장 없음 */ }
@@ -296,7 +306,7 @@
     }
 
     function koVoices() {
-        var all = synth ? synth.getVoices() : [];
+        var all = hasSynth ? synth.getVoices() : [];
         var ko = all.filter(function (v) { return /^ko/i.test(v.lang); });
         return ko.length ? ko : all;
     }
@@ -314,16 +324,34 @@
 
     function fillVoices() {
         var sel = $('#bs-tts-voice');
-        var voices = koVoices();
-        sel.innerHTML = voices.map(function (v) {
-            return '<option value="' + esc(v.name) + '" title="' + esc(v.name) + '">' + esc(voiceLabel(v)) + '</option>';
-        }).join('');
-        sel.style.display = voices.length > 1 ? '' : 'none';
-        if (tts.ttsCfg.voice && voices.some(function (v) { return v.name === tts.ttsCfg.voice; })) sel.value = tts.ttsCfg.voice;
+        var html = '';
+        var browser = koVoices();
+        if (browser.length) {
+            html += '<optgroup label="브라우저 음성">' + browser.map(function (v) {
+                return '<option value="b:' + esc(v.name) + '" title="' + esc(v.name) + '">' + esc(voiceLabel(v)) + '</option>';
+            }).join('') + '</optgroup>';
+        }
+        if (tts.serverVoices.length) {
+            html += '<optgroup label="Edge 음성 (서버)">' + tts.serverVoices.map(function (v) {
+                return '<option value="e:' + esc(v.id) + '" title="' + esc(v.id) + '">' + esc(v.name) + '</option>';
+            }).join('') + '</optgroup>';
+        } else if (tts.serverNote) {
+            html += '<optgroup label="Edge 음성 (서버)"><option disabled>' + esc(tts.serverNote) + '</option></optgroup>';
+        }
+        sel.innerHTML = html;
+        var values = Array.prototype.map.call(sel.options, function (o) { return o.disabled ? null : o.value; }).filter(Boolean);
+        if (tts.ttsCfg.voice && values.indexOf(tts.ttsCfg.voice) >= 0) sel.value = tts.ttsCfg.voice;
+        else if (values.length) sel.value = values[0];
+        sel.style.display = values.length > 1 || tts.serverNote ? '' : 'none';
+        $('#bs-tts-play').disabled = !values.length;
     }
 
+    function voiceValue() { return $('#bs-tts-voice').value || ''; }
+    function isServerVoice() { return voiceValue().indexOf('e:') === 0; }
+    function rateValue() { return parseFloat($('#bs-tts-rate').value) || 1; }
+
     function pickVoice() {
-        var name = $('#bs-tts-voice').value;
+        var name = voiceValue().replace(/^b:/, '');
         var voices = koVoices();
         for (var i = 0; i < voices.length; i++) { if (voices[i].name === name) return voices[i]; }
         return voices[0] || null;
@@ -340,16 +368,79 @@
         if (r.top < 80 || r.bottom > window.innerHeight - 40) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
     }
 
-    function ttsUi() {
+    function ttsUi(note) {
         var play = $('#bs-tts-play');
-        if (!play) return;  // 음성 합성을 지원하지 않는 브라우저
-        play.querySelector('span').textContent = tts.playing ? '일시정지' : (tts.chunks.length && tts.idx > 0 ? '이어 듣기' : '듣기');
+        if (!play) return;
+        var paused = !tts.playing && tts.chunks.length && tts.idx > 0;
+        play.querySelector('span').textContent = tts.playing ? '일시정지' : (paused ? '이어 듣기' : '듣기');
         var icon = play.querySelector('i');
         if (icon) icon.className = tts.playing ? 'fa-solid fa-pause' : 'fa-solid fa-volume-high';
         play.classList.toggle('active', tts.playing);
-        $('#bs-tts-stop').disabled = !tts.playing && !(tts.chunks.length && tts.idx > 0);
-        $('#bs-tts-pos').textContent = tts.chunks.length && (tts.playing || tts.idx > 0)
-            ? Math.min(tts.idx + 1, tts.chunks.length) + ' / ' + tts.chunks.length : '';
+        $('#bs-tts-stop').disabled = !tts.playing && !paused;
+        var pos = $('#bs-tts-pos');
+        pos.classList.toggle('bs-error', !!note);
+        pos.textContent = note || (tts.chunks.length && (tts.playing || tts.idx > 0)
+            ? Math.min(tts.idx + 1, tts.chunks.length) + ' / ' + tts.chunks.length : '');
+    }
+
+    // 서버 음성 한 조각을 data: URL로 받는다 (같은 글·목소리 안에서는 한 번만)
+    function fetchAudio(i) {
+        var c = tts.chunks[i];
+        if (!c) return null;
+        var key = voiceValue() + '|' + i;
+        if (!tts.fetches[key]) {
+            tts.fetches[key] = callAction('tts', { voice: voiceValue().slice(2), text: c.text }).then(function (r) {
+                return 'data:' + (r.mime || 'audio/mpeg') + ';base64,' + r.audio;
+            });
+            tts.fetches[key].catch(function () { delete tts.fetches[key]; });  // 실패한 건 다음에 다시 받게
+        }
+        return tts.fetches[key];
+    }
+
+    function finishChunk(gen) {
+        if (gen !== tts.gen || !tts.playing) return;  // 멈췄거나 다른 조각으로 넘어간 뒤의 옛 이벤트
+        tts.idx++;
+        speakNext();
+    }
+
+    function speakServer(c, gen) {
+        var idx = tts.idx;
+        fetchAudio(idx + 1); fetchAudio(idx + 2);  // 미리 받기
+        fetchAudio(idx).then(function (url) {
+            if (gen !== tts.gen || !tts.playing) return;
+            var a = tts.audio;
+            a.onended = function () { finishChunk(gen); };
+            a.onerror = null;
+            a.src = url;
+            a.playbackRate = rateValue();
+            if (tts.resumeIdx === idx && tts.resumeTime) { try { a.currentTime = tts.resumeTime; } catch (e) { /* 처음부터 */ } }
+            tts.resumeIdx = -1; tts.resumeTime = 0;
+            var p = a.play();
+            if (p && p.catch) p.catch(function (e) {
+                if (gen !== tts.gen) return;
+                tts.playing = false;
+                ttsUi(e && e.name === 'NotAllowedError' ? '브라우저가 자동 재생을 막았습니다. 듣기를 다시 눌러 주세요.' : '재생하지 못했습니다.');
+            });
+        }, function (e) {
+            if (gen !== tts.gen) return;
+            tts.playing = false;
+            ttsUi(e.message || String(e));
+        });
+    }
+
+    function speakBrowser(c, gen) {
+        var u = new SpeechSynthesisUtterance(c.text);
+        u.lang = 'ko-KR';
+        var v = pickVoice();
+        if (v) { u.voice = v; u.lang = v.lang; }
+        u.rate = rateValue();
+        u.onend = function () { finishChunk(gen); };
+        u.onerror = function (e) {
+            if (e.error === 'interrupted' || e.error === 'canceled') return;
+            finishChunk(gen);  // 한 조각이 실패해도 다음으로
+        };
+        tts.utter = u;  // 참조를 안 잡아 두면 크롬이 onend 전에 수거하는 일이 있다
+        synth.speak(u);
     }
 
     function speakNext() {
@@ -364,46 +455,34 @@
             }
             return;
         }
-        var gen = tts.gen;
         var c = tts.chunks[tts.idx];
         ttsMark(c.el);
         ttsUi();
-        var u = new SpeechSynthesisUtterance(c.text);
-        u.lang = 'ko-KR';
-        var v = pickVoice();
-        if (v) { u.voice = v; u.lang = v.lang; }
-        u.rate = parseFloat($('#bs-tts-rate').value) || 1;
-        u.onend = function () {
-            if (gen !== tts.gen || !tts.playing) return;  // cancel()로 끝난 옛 조각
-            tts.idx++;
-            speakNext();
-        };
-        u.onerror = function (e) {
-            if (gen !== tts.gen || !tts.playing) return;
-            if (e.error === 'interrupted' || e.error === 'canceled') return;
-            tts.idx++;  // 한 조각이 실패해도 다음으로
-            speakNext();
-        };
-        tts.utter = u;  // 참조를 안 잡아 두면 크롬이 onend 전에 수거하는 일이 있다
-        synth.speak(u);
+        if (isServerVoice()) speakServer(c, tts.gen); else speakBrowser(c, tts.gen);
+    }
+
+    function silence() {
+        if (hasSynth) synth.cancel();
+        if (tts.audio) { tts.audio.onended = null; tts.audio.pause(); }
     }
 
     function ttsPlay(fromIdx) {
-        if (!synth) return;
-        if (!tts.chunks.length || fromIdx === 0) tts.chunks = buildChunks();
-        if (!tts.chunks.length) { $('#bs-tts-pos').textContent = '읽을 글이 없습니다'; return; }
-        if (typeof fromIdx === 'number') tts.idx = fromIdx;
+        if (!tts.chunks.length || fromIdx === 0) { tts.chunks = buildChunks(); tts.fetches = {}; }
+        if (!tts.chunks.length) { ttsUi('읽을 글이 없습니다'); return; }
+        if (typeof fromIdx === 'number') { tts.idx = fromIdx; tts.resumeIdx = -1; }
         if (tts.idx >= tts.chunks.length) tts.idx = 0;
         tts.gen++;
-        synth.cancel();
+        silence();
         tts.playing = true;
         speakNext();
     }
 
     function ttsPause() {
+        // 서버 음성은 멈춘 자리부터, 브라우저 음성은 그 문장 처음부터 이어 듣는다
+        if (isServerVoice() && tts.audio && tts.audio.src) { tts.resumeIdx = tts.idx; tts.resumeTime = tts.audio.currentTime; }
         tts.gen++;
         tts.playing = false;
-        if (synth) synth.cancel();
+        silence();
         ttsUi();
     }
 
@@ -412,22 +491,28 @@
         tts.playing = false;
         tts.chunks = [];
         tts.idx = 0;
-        if (synth) synth.cancel();
+        tts.fetches = {};
+        tts.resumeIdx = -1;
+        silence();
         ttsMark(null);
         ttsUi();
     }
 
     function initTts() {
-        if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
-            $('#bs-tts').innerHTML = '<span class="bs-tts-pos">이 브라우저는 소리 내어 읽기를 지원하지 않습니다.</span>';
-            return;
-        }
+        tts.audio = new Audio();
+        tts.audio.preload = 'auto';
         var rate = $('#bs-tts-rate');
         rate.value = String(tts.ttsCfg.rate || '1');
         if (!rate.value) rate.value = '1';
         $('#bs-tts-next').checked = !!tts.ttsCfg.autoNext;
         fillVoices();
-        if (synth.addEventListener) synth.addEventListener('voiceschanged', function () { if (alive()) fillVoices(); });
+        if (hasSynth && synth.addEventListener) synth.addEventListener('voiceschanged', function () { if (alive()) fillVoices(); });
+        callAction('tts_voices', {}).then(function (r) {
+            if (!alive()) return;
+            tts.serverVoices = r.voices || [];
+            tts.serverNote = r.available ? '' : (r.reason || '');
+            fillVoices();
+        }, function () { /* 서버 음성 없이 브라우저 음성만 */ });
 
         $('#bs-tts-play').addEventListener('click', function () {
             if (tts.playing) ttsPause(); else ttsPlay();
@@ -435,10 +520,14 @@
         $('#bs-tts-stop').addEventListener('click', ttsStop);
         rate.addEventListener('change', function () {
             tts.ttsCfg.rate = rate.value; ttsSave();
-            if (tts.playing) ttsPlay(tts.idx);  // 읽던 조각부터 새 속도로
+            if (!tts.playing) return;
+            if (isServerVoice()) tts.audio.playbackRate = rateValue();  // 재생 중인 소리에 바로 적용
+            else ttsPlay(tts.idx);  // 브라우저 음성은 읽던 조각부터 새 속도로
         });
         $('#bs-tts-voice').addEventListener('change', function () {
-            tts.ttsCfg.voice = $('#bs-tts-voice').value; ttsSave();
+            tts.ttsCfg.voice = voiceValue(); ttsSave();
+            tts.fetches = {};
+            tts.resumeIdx = -1;  // 다른 목소리는 길이가 달라서 멈춘 시각을 이어 쓸 수 없다
             if (tts.playing) ttsPlay(tts.idx);
         });
         $('#bs-tts-next').addEventListener('change', function () {

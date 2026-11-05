@@ -9,7 +9,7 @@
   Ctrl/가운데 클릭은 브런치 원문을 새 탭으로 엽니다. 목록은 20개씩 **더 보기**.
 - 처음 열면 오늘 요일 탭이 선택됩니다.
 - 읽기 화면의 **듣기** 버튼으로 글을 소리 내어 읽어 줍니다 (TTS). 읽는 문단을 강조하고 따라 내려가며,
-  일시정지/이어 듣기, 속도(0.8~2.0x), 목소리 선택, 문단을 눌러 그 자리부터 듣기,
+  일시정지/이어 듣기, 속도(0.8~2.0x), 목소리 선택(브라우저 음성 + Edge 음성 14개), 문단을 눌러 그 자리부터 듣기,
   **다음 화 이어 듣기**를 지원합니다. 설정은 브라우저에 기억됩니다.
 
 ## 설치
@@ -17,13 +17,14 @@
 1. 이 저장소를 받거나(`git clone https://github.com/yume-script/ym_brunch.git`) 압축을 풀어, `ym_brunch` 폴더를 BookOasis의 `plugins/metadata/` 아래에 넣습니다.
    ```
    plugins/metadata/ym_brunch/
-     __init__.py  ym_brunch.py  VERSION  index.html  script.js  style.css  README.md
+     __init__.py  ym_brunch.py  VERSION  index.html  script.js  style.css  requirements.txt  README.md
    ```
    도커라면 예: `docker cp ym_brunch bookoasis:/app/plugins/metadata/`
 2. BookOasis를 재시작합니다 (`docker restart bookoasis`).
 3. 플러그인 목록에서 "브런치 요일별 연재"를 켭니다.
 
-설정 항목은 없습니다. 추가 패키지도 필요 없습니다(표준 라이브러리만 사용).
+설정 항목은 없습니다. 기본 기능은 추가 패키지 없이 동작하고, Edge 음성(목소리 14개 추가)만 `edge-tts`가 필요합니다
+(아래 "소리 내어 읽기" 참고).
 
 ## 동작 방식
 
@@ -56,12 +57,31 @@ ym_brunch.py ──GET──▶ https://brunch.co.kr/@@{user_id}/{article_no}
 
 ## 소리 내어 읽기(TTS)
 
-브라우저에 들어 있는 음성 합성(Web Speech API `speechSynthesis`)을 씁니다. 서버나 추가 설치, API 키가
-필요 없고, 목소리는 기기에 깔린 한국어 음성(윈도우 Heami/엣지 SunHi, 안드로이드·크롬 Google 한국어,
-iOS Yuna 등)을 씁니다. 한국어 음성이 없는 기기면 기본 음성으로 읽습니다.
+목소리는 두 종류에서 고릅니다.
 
-- 크롬은 긴 문장을 한 번에 넘기면 15초쯤에서 끊어서, 문장 단위(최대 약 180자)로 나눠 차례로 읽습니다.
-- 일시정지는 브라우저의 pause()가 기기마다 불안정해서, 멈춘 뒤 이어 들으면 그 문장 처음부터 다시 읽습니다.
+| 종류 | 목소리 | 필요한 것 |
+|---|---|---|
+| 브라우저 음성 | 기기에 깔린 한국어 음성 (보통 1~2개: 크롬 Google 한국어, 윈도우 Heami, 엣지 SunHi, iOS Yuna 등) | 없음 |
+| Edge 음성 (서버) | 선히·인준·현수(한국어) + Ava·Emma·Andrew·Brian·William·Seraphina·Florian·Vivienne·Remy·Giuseppe·Thalita(다국어, 한국어도 읽음) 14개 | BookOasis 컨테이너에 `edge-tts` |
+
+Edge 음성을 쓰려면 BookOasis 컨테이너에 패키지를 설치하고 재시작합니다.
+
+```
+docker exec bookoasis pip install edge-tts
+docker restart bookoasis
+```
+
+컨테이너를 새로 만들면(이미지 업데이트 등) 설치가 사라지니 다시 설치해야 합니다. 설치가 안 돼 있으면
+목소리 목록에 설치 안내만 보이고, 브라우저 음성은 그대로 쓸 수 있습니다.
+
+- Edge 음성은 마이크로소프트 Edge의 "소리 내어 읽기"가 쓰는 무료 서버를 `edge-tts`로 부릅니다. 키·요금은
+  없지만 **공식 API가 아니라서** 마이크로소프트가 막으면 안 될 수 있습니다. BookOasis 서버에서
+  `speech.platform.bing.com`으로 나가는 인터넷이 필요합니다.
+- 서버가 문장마다 mp3(약 20~30KB, 처음 1~2초)를 만들어 넘기고, 화면은 지금 문장을 읽는 동안 다음 두 문장을
+  미리 받아 둡니다. 만든 음성은 서버 메모리에 최대 30MB 보관합니다.
+- 다국어 목소리는 영어권 등의 억양이 섞일 수 있습니다.
+- 크롬 브라우저 음성은 긴 문장을 한 번에 넘기면 15초쯤에서 끊어서, 문장 단위(최대 약 180자)로 나눠 읽습니다.
+- 일시정지 후 이어 들으면 Edge 음성은 멈춘 자리부터, 브라우저 음성은 그 문장 처음부터 읽습니다.
 - 목록으로 돌아가거나 다른 글을 열거나 플러그인 탭을 벗어나면 멈춥니다.
 - 휴대폰은 화면이 꺼지면 브라우저가 읽기를 멈출 수 있습니다.
 
