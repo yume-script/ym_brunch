@@ -50,6 +50,25 @@
         <i class="fa-solid fa-arrow-up-right-from-square"></i> 브런치 원문
       </a>
     </div>
+    <div class="bs-tts" id="bs-tts">
+      <button type="button" class="bs-btn bs-tts-play" id="bs-tts-play" title="소리 내어 읽기">
+        <i class="fa-solid fa-volume-high"></i> <span>듣기</span>
+      </button>
+      <button type="button" class="bs-btn" id="bs-tts-stop" title="그만 듣기" disabled><i class="fa-solid fa-stop"></i></button>
+      <select id="bs-tts-rate" class="bs-tts-select" title="읽기 속도">
+        <option value="0.8">0.8x</option>
+        <option value="1">1.0x</option>
+        <option value="1.2">1.2x</option>
+        <option value="1.5">1.5x</option>
+        <option value="1.8">1.8x</option>
+        <option value="2">2.0x</option>
+      </select>
+      <select id="bs-tts-voice" class="bs-tts-select" title="목소리"></select>
+      <label class="bs-tts-auto" title="글을 다 읽으면 다음 화를 열어 이어서 읽습니다">
+        <input type="checkbox" id="bs-tts-next"> 다음 화 이어 듣기
+      </label>
+      <span class="bs-tts-pos" id="bs-tts-pos"></span>
+    </div>
   </div>
   <div class="bs-status" id="bs-reader-status" role="status"></div>
   <article class="bs-article" id="bs-article"></article>
