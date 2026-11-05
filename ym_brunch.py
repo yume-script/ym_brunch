@@ -343,7 +343,7 @@ _audio_lock = threading.Lock()
 def tts_voices():
     if edge_tts is None:
         return {"available": False, "voices": [],
-                "reason": "서버에 edge-tts가 없습니다 (docker exec bookoasis pip install edge-tts)"}
+                "reason": "서버에 edge-tts가 없습니다: docker exec bookoasis pip install edge-tts 후 재시작 (README 설치 2단계)"}
     return {"available": True, "voices": [{"id": i, "name": n} for i, n in EDGE_VOICES]}
 
 

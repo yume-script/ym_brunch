@@ -14,6 +14,8 @@
 
 ## 설치
 
+### 1. 플러그인 넣기
+
 1. 이 저장소를 받거나(`git clone https://github.com/yume-script/ym_brunch.git`) 압축을 풀어, `ym_brunch` 폴더를 BookOasis의 `plugins/metadata/` 아래에 넣습니다.
    ```
    plugins/metadata/ym_brunch/
@@ -23,8 +25,49 @@
 2. BookOasis를 재시작합니다 (`docker restart bookoasis`).
 3. 플러그인 목록에서 "브런치 요일별 연재"를 켭니다.
 
-설정 항목은 없습니다. 기본 기능은 추가 패키지 없이 동작하고, Edge 음성(목소리 14개 추가)만 `edge-tts`가 필요합니다
-(아래 "소리 내어 읽기" 참고).
+여기까지만 해도 연재 목록, 글 읽기, 브라우저 음성 듣기는 모두 동작합니다. 설정 항목은 없습니다.
+
+### 2. Edge 음성 설치 (목소리 14개 추가, 선택)
+
+'듣기'의 목소리 목록에 **Edge 음성 (서버)** 14개(선히·인준·현수 + 다국어 11개)를 추가하려면
+BookOasis 컨테이너에 `edge-tts` 패키지를 설치해야 합니다. 컨테이너 이름이 `bookoasis`가 아니면 바꿔서 입력하세요.
+
+1. 패키지 설치
+   ```
+   docker exec bookoasis pip install edge-tts
+   ```
+   `pip`를 찾지 못하면 `docker exec bookoasis python3 -m pip install edge-tts`로 설치합니다.
+2. 설치 확인 (버전 숫자가 나오면 성공)
+   ```
+   docker exec bookoasis python3 -c "import edge_tts; print(edge_tts.__version__)"
+   ```
+3. BookOasis 재시작 (플러그인이 시작할 때 `edge-tts`를 찾기 때문에 꼭 재시작해야 합니다)
+   ```
+   docker restart bookoasis
+   ```
+4. 브런치 연재 탭에서 아무 글이나 열고, 목소리 목록에 **Edge 음성 (서버)** 묶음이 보이는지 확인합니다.
+   목록에 "서버에 edge-tts가 없습니다"라는 안내가 보이면 1~3단계가 안 된 것입니다.
+
+**컨테이너를 새로 만들면 설치가 사라집니다.** `docker restart`는 괜찮지만, 이미지 업데이트나
+`docker compose up --force-recreate`, `docker rm` 후 다시 만들면 1~3단계를 다시 해야 합니다.
+매번 하기 번거로우면 BookOasis 이미지를 바탕으로 `edge-tts`를 넣은 이미지를 만들어 쓰면 됩니다.
+
+```dockerfile
+# Dockerfile (BookOasis 이미지 이름은 docker-compose.yml의 image: 값으로)
+FROM <BookOasis 이미지>
+RUN pip install --no-cache-dir edge-tts
+```
+
+```yaml
+# docker-compose.yml 의 bookoasis 서비스에서 image: 대신
+    build: .
+```
+
+**필요한 것과 주의할 점**
+- BookOasis 서버에서 `speech.platform.bing.com`(HTTPS)으로 나가는 인터넷 연결이 필요합니다.
+- 마이크로소프트 Edge의 "소리 내어 읽기"가 쓰는 무료 서버를 부르는 방식이라 키·요금은 없지만 **공식 API가 아닙니다**.
+  막히면 Edge 음성만 안 되고, 브라우저 음성은 그대로 쓸 수 있습니다.
+- 설치를 되돌리려면 `docker exec bookoasis pip uninstall -y edge-tts` 후 재시작합니다.
 
 ## 동작 방식
 
@@ -64,15 +107,8 @@ ym_brunch.py ──GET──▶ https://brunch.co.kr/@@{user_id}/{article_no}
 | 브라우저 음성 | 기기에 깔린 한국어 음성 (보통 1~2개: 크롬 Google 한국어, 윈도우 Heami, 엣지 SunHi, iOS Yuna 등) | 없음 |
 | Edge 음성 (서버) | 선히·인준·현수(한국어) + Ava·Emma·Andrew·Brian·William·Seraphina·Florian·Vivienne·Remy·Giuseppe·Thalita(다국어, 한국어도 읽음) 14개 | BookOasis 컨테이너에 `edge-tts` |
 
-Edge 음성을 쓰려면 BookOasis 컨테이너에 패키지를 설치하고 재시작합니다.
-
-```
-docker exec bookoasis pip install edge-tts
-docker restart bookoasis
-```
-
-컨테이너를 새로 만들면(이미지 업데이트 등) 설치가 사라지니 다시 설치해야 합니다. 설치가 안 돼 있으면
-목소리 목록에 설치 안내만 보이고, 브라우저 음성은 그대로 쓸 수 있습니다.
+Edge 음성 설치 방법은 위 [설치 → 2. Edge 음성 설치](#2-edge-음성-설치-목소리-14개-추가-선택)를 보세요.
+설치가 안 돼 있으면 목록에 설치 안내만 보이고, 브라우저 음성은 그대로 쓸 수 있습니다.
 
 - Edge 음성은 마이크로소프트 Edge의 "소리 내어 읽기"가 쓰는 무료 서버를 `edge-tts`로 부릅니다. 키·요금은
   없지만 **공식 API가 아니라서** 마이크로소프트가 막으면 안 될 수 있습니다. BookOasis 서버에서
