@@ -258,7 +258,52 @@
     border-bottom: 1px solid var(--app-border);
 }
 
+.bs-reader-bar { flex-wrap: wrap; }
 .bs-reader-bar-right { display: flex; gap: 0.4rem; }
+
+/* ===== 소리 내어 읽기 ===== */
+.bs-tts {
+    flex-basis: 100%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.bs-tts-play.active {
+    background: var(--app-accent);
+    border-color: var(--app-accent);
+    color: var(--app-accent-contrast, #fff);
+}
+
+.bs-tts-select {
+    background: var(--app-input-bg, var(--app-bg-card));
+    color: var(--app-text-primary);
+    border: 1px solid var(--app-border);
+    border-radius: 8px;
+    padding: 0.45rem 0.5rem;
+    font-size: 0.85rem;
+    max-width: 14rem;
+}
+
+.bs-tts-auto {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    color: var(--app-text-muted);
+    cursor: pointer;
+}
+
+.bs-tts-pos { font-size: 0.8rem; color: var(--app-text-muted); margin-left: auto; }
+
+.bs-art-head.bs-tts-on,
+.bs-art-body > .bs-tts-on {
+    background: color-mix(in srgb, var(--app-accent) 16%, transparent);
+    border-radius: 6px;
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--app-accent) 16%, transparent);
+    transition: background 0.2s ease;
+}
 .bs-reader-bar a.bs-btn { text-decoration: none; }
 .bs-btn:disabled { opacity: 0.4; cursor: default; }
 

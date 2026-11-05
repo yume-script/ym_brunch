@@ -5,6 +5,7 @@
 // message에 JSON 문자열로 돌려준다. 바디는 type/plugin_id/action_id/context만 읽힌다.
 // 카드를 누르면 'article'로 본문을 받아 같은 탭 안의 읽기 화면에 띄운다(브런치는 iframe 금지).
 // 본문 HTML은 서버에서 허용 태그만 남긴 것이라 그대로 innerHTML로 넣는다.
+// 읽기 화면의 "듣기"는 브라우저 내장 음성 합성(speechSynthesis)으로 본문을 읽어 준다.
 (function () {
     var ACTION_URL = '/api/media/context-menu/book/plugins/action';
     var DAY_KEYS = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
@@ -218,6 +219,9 @@
 
     async function openArticle(uid, no, fromList) {
         if (!uid || !no) return;
+        var autoStart = tts.autoStart;  // 다음 화 이어 듣기로 열린 경우
+        tts.autoStart = false;
+        ttsStop();
         var seq = ++reader.seq;
         var box = scrollBox();
         if (fromList) reader.listScroll = box.scrollTop;
@@ -231,6 +235,7 @@
             if (!alive() || seq !== reader.seq) return;
             $('#bs-reader-status').textContent = '';
             renderArticle(a);
+            if (autoStart) ttsPlay(0);
         } catch (e) {
             if (!alive() || seq !== reader.seq) return;
             $('#bs-reader-status').className = 'bs-status bs-error';
@@ -239,7 +244,211 @@
         }
     }
 
+    // ---- 소리 내어 읽기 (브라우저 내장 Web Speech API, 서버는 관여하지 않음) ----
+    // 크롬은 한 번에 긴 문장을 넘기면 15초쯤에서 끊기므로 문단을 문장 단위 조각(최대 ~180자)으로 나눠
+    // 하나씩 읽는다. 일시정지는 pause()가 안드로이드 크롬 등에서 불안정해서 cancel 후 그 조각부터 다시 읽는다.
+    var TTS_KEY = 'ym_brunch_tts';
+    var synth = window.speechSynthesis;
+    var tts = { chunks: [], idx: 0, playing: false, gen: 0, utter: null, autoStart: false, cur: null, ttsCfg: {} };
+    try { tts.ttsCfg = JSON.parse(localStorage.getItem(TTS_KEY) || '{}') || {}; } catch (e) { tts.ttsCfg = {}; }
+
+    function ttsSave() {
+        try { localStorage.setItem(TTS_KEY, JSON.stringify(tts.ttsCfg)); } catch (e) { /* 저장 못 해도 동작엔 지장 없음 */ }
+    }
+
+    function splitText(text) {
+        var out = [];
+        // 문장 끝 부호 뒤에서 자른다 (lookbehind는 옛 사파리에서 스크립트 전체가 깨져서 쓰지 않음)
+        var sentences = (text.replace(/\s+/g, ' ').trim().match(/[^.!?。…~”"’]+[.!?。…~”"’]*/g) || [])
+            .map(function (x) { return x.trim(); }).filter(Boolean);
+        var buf = '';
+        sentences.forEach(function (s) {
+            while (s.length > 180) {  // 마침표 없이 긴 문장은 띄어쓰기에서 자른다
+                var cut = s.lastIndexOf(' ', 180);
+                if (cut < 60) cut = 180;
+                if (buf) { out.push(buf); buf = ''; }
+                out.push(s.slice(0, cut));
+                s = s.slice(cut).trim();
+            }
+            if (buf && (buf + ' ' + s).length > 180) { out.push(buf); buf = ''; }
+            buf = buf ? buf + ' ' + s : s;
+        });
+        if (buf) out.push(buf);
+        return out.filter(function (t) { return /[\p{L}\p{N}]/u.test(t); });
+    }
+
+    function buildChunks() {
+        var chunks = [];
+        var head = $('.bs-art-head');
+        if (head) {
+            var t = $('.bs-art-title'), sub = $('.bs-art-sub');
+            var intro = (t ? t.textContent : '') + (sub ? '. ' + sub.textContent : '');
+            splitText(intro).forEach(function (s) { chunks.push({ el: head, text: s }); });
+        }
+        var body = $('.bs-art-body');
+        if (body) {
+            // 본문 맨 위 블록 하나(문단·제목·인용·사진 설명 등)가 강조 단위
+            Array.prototype.forEach.call(body.children, function (el) {
+                splitText(el.innerText || el.textContent || '').forEach(function (s) { chunks.push({ el: el, text: s }); });
+            });
+        }
+        return chunks;
+    }
+
+    function koVoices() {
+        var all = synth ? synth.getVoices() : [];
+        var ko = all.filter(function (v) { return /^ko/i.test(v.lang); });
+        return ko.length ? ko : all;
+    }
+
+    function fillVoices() {
+        var sel = $('#bs-tts-voice');
+        var voices = koVoices();
+        sel.innerHTML = voices.map(function (v) {
+            return '<option value="' + esc(v.name) + '">' + esc(v.name.replace(/^Microsoft |^Google /, '')) + '</option>';
+        }).join('');
+        sel.style.display = voices.length > 1 ? '' : 'none';
+        if (tts.ttsCfg.voice && voices.some(function (v) { return v.name === tts.ttsCfg.voice; })) sel.value = tts.ttsCfg.voice;
+    }
+
+    function pickVoice() {
+        var name = $('#bs-tts-voice').value;
+        var voices = koVoices();
+        for (var i = 0; i < voices.length; i++) { if (voices[i].name === name) return voices[i]; }
+        return voices[0] || null;
+    }
+
+    function ttsMark(el) {
+        if (tts.cur === el) return;
+        if (tts.cur) tts.cur.classList.remove('bs-tts-on');
+        tts.cur = el;
+        if (!el) return;
+        el.classList.add('bs-tts-on');
+        var r = el.getBoundingClientRect();
+        // 화면 밖으로 나간 문단만 가운데로 (읽는 중 사용자가 스크롤해도 매번 끌어오지 않게)
+        if (r.top < 80 || r.bottom > window.innerHeight - 40) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+
+    function ttsUi() {
+        var play = $('#bs-tts-play');
+        if (!play) return;  // 음성 합성을 지원하지 않는 브라우저
+        play.querySelector('span').textContent = tts.playing ? '일시정지' : (tts.chunks.length && tts.idx > 0 ? '이어 듣기' : '듣기');
+        var icon = play.querySelector('i');
+        if (icon) icon.className = tts.playing ? 'fa-solid fa-pause' : 'fa-solid fa-volume-high';
+        play.classList.toggle('active', tts.playing);
+        $('#bs-tts-stop').disabled = !tts.playing && !(tts.chunks.length && tts.idx > 0);
+        $('#bs-tts-pos').textContent = tts.chunks.length && (tts.playing || tts.idx > 0)
+            ? Math.min(tts.idx + 1, tts.chunks.length) + ' / ' + tts.chunks.length : '';
+    }
+
+    function speakNext() {
+        // 다른 글로 넘어갔거나 플러그인 탭을 벗어났으면(컨테이너가 DOM에서 빠짐) 멈춘다
+        if (!alive() || !host.isConnected) { ttsStop(); return; }
+        if (tts.idx >= tts.chunks.length) {
+            var auto = tts.ttsCfg.autoNext && reader.next;
+            ttsStop();
+            if (auto) {
+                tts.autoStart = true;
+                openArticle(reader.next.uid, reader.next.no);
+            }
+            return;
+        }
+        var gen = tts.gen;
+        var c = tts.chunks[tts.idx];
+        ttsMark(c.el);
+        ttsUi();
+        var u = new SpeechSynthesisUtterance(c.text);
+        u.lang = 'ko-KR';
+        var v = pickVoice();
+        if (v) { u.voice = v; u.lang = v.lang; }
+        u.rate = parseFloat($('#bs-tts-rate').value) || 1;
+        u.onend = function () {
+            if (gen !== tts.gen || !tts.playing) return;  // cancel()로 끝난 옛 조각
+            tts.idx++;
+            speakNext();
+        };
+        u.onerror = function (e) {
+            if (gen !== tts.gen || !tts.playing) return;
+            if (e.error === 'interrupted' || e.error === 'canceled') return;
+            tts.idx++;  // 한 조각이 실패해도 다음으로
+            speakNext();
+        };
+        tts.utter = u;  // 참조를 안 잡아 두면 크롬이 onend 전에 수거하는 일이 있다
+        synth.speak(u);
+    }
+
+    function ttsPlay(fromIdx) {
+        if (!synth) return;
+        if (!tts.chunks.length || fromIdx === 0) tts.chunks = buildChunks();
+        if (!tts.chunks.length) { $('#bs-tts-pos').textContent = '읽을 글이 없습니다'; return; }
+        if (typeof fromIdx === 'number') tts.idx = fromIdx;
+        if (tts.idx >= tts.chunks.length) tts.idx = 0;
+        tts.gen++;
+        synth.cancel();
+        tts.playing = true;
+        speakNext();
+    }
+
+    function ttsPause() {
+        tts.gen++;
+        tts.playing = false;
+        if (synth) synth.cancel();
+        ttsUi();
+    }
+
+    function ttsStop() {
+        tts.gen++;
+        tts.playing = false;
+        tts.chunks = [];
+        tts.idx = 0;
+        if (synth) synth.cancel();
+        ttsMark(null);
+        ttsUi();
+    }
+
+    function initTts() {
+        if (!synth || typeof SpeechSynthesisUtterance === 'undefined') {
+            $('#bs-tts').innerHTML = '<span class="bs-tts-pos">이 브라우저는 소리 내어 읽기를 지원하지 않습니다.</span>';
+            return;
+        }
+        var rate = $('#bs-tts-rate');
+        rate.value = String(tts.ttsCfg.rate || '1');
+        if (!rate.value) rate.value = '1';
+        $('#bs-tts-next').checked = !!tts.ttsCfg.autoNext;
+        fillVoices();
+        if (synth.addEventListener) synth.addEventListener('voiceschanged', function () { if (alive()) fillVoices(); });
+
+        $('#bs-tts-play').addEventListener('click', function () {
+            if (tts.playing) ttsPause(); else ttsPlay();
+        });
+        $('#bs-tts-stop').addEventListener('click', ttsStop);
+        rate.addEventListener('change', function () {
+            tts.ttsCfg.rate = rate.value; ttsSave();
+            if (tts.playing) ttsPlay(tts.idx);  // 읽던 조각부터 새 속도로
+        });
+        $('#bs-tts-voice').addEventListener('change', function () {
+            tts.ttsCfg.voice = $('#bs-tts-voice').value; ttsSave();
+            if (tts.playing) ttsPlay(tts.idx);
+        });
+        $('#bs-tts-next').addEventListener('change', function () {
+            tts.ttsCfg.autoNext = $('#bs-tts-next').checked; ttsSave();
+        });
+        // 듣는 중(또는 일시정지 중)에 문단을 누르면 거기서부터 읽는다. 링크/버튼은 원래 동작대로.
+        $('#bs-article').addEventListener('click', function (ev) {
+            if (!tts.chunks.length || (ev.target.closest && ev.target.closest('a, button'))) return;
+            var body = $('.bs-art-body');
+            var el = ev.target;
+            while (el && el.parentElement !== body) el = el.parentElement;
+            if (!el) return;
+            for (var i = 0; i < tts.chunks.length; i++) {
+                if (tts.chunks[i].el === el) { ttsPlay(i); return; }
+            }
+        });
+        ttsUi();
+    }
+
     function closeReader() {
+        ttsStop();
         reader.seq++;
         showReader(false);
         var box = scrollBox();
@@ -264,6 +473,7 @@
     $('#bs-prev-top').addEventListener('click', function () { if (reader.prev) openArticle(reader.prev.uid, reader.prev.no); });
     $('#bs-next-top').addEventListener('click', function () { if (reader.next) openArticle(reader.next.uid, reader.next.no); });
     $('#bs-back').addEventListener('click', closeReader);
+    initTts();
 
     $all('.bs-tab').forEach(function (b) {
         b.addEventListener('click', function () {
